@@ -51,7 +51,7 @@ Essa abordagem espelha sistemas corporativos como ServiceNow ou Jira e garante m
 
 ## Repository Structure | Estrutura do Repositório
 * `/case_study/`: Business-focused documentation detailing the problem, approach, and executive findings. / Documentação orientada ao negócio com problema, abordagem e achados executivos.
-* `/docs/`: Technical documentation including the Data Dictionary and Architecture. / Documentação técnica, incluindo Data Dictionary e Arquitetura.
+* `/docs/`: Technical documentation including Data Dictionary, Architecture, and the ITIL v4 Study Laboratory artifacts (`service_catalog.md`, `incident_workflow.md`, `sla_policy.md`, `data_quality.md`) to connect data engineering with service governance documentation. / Documentação técnica, incluindo Data Dictionary, Arquitetura e os artefatos do Laboratório de Estudos ITIL v4 (`service_catalog.md`, `incident_workflow.md`, `sla_policy.md`, `data_quality.md`) para conectar engenharia de dados com documentação de governança de serviços.
 * `/pipelines/`: Python scripts for generating the synthetic state-machine dataset and loading it into Postgres. / Scripts Python para gerar o dataset sintético baseado em máquina de estados e carregar no Postgres.
 * `/sql/`: DDL schemas, data marts, and KPI queries. / Schemas DDL, data marts e consultas de KPI.
 * `/powerbi/`: The final interactive dashboard file. / Arquivo final do dashboard interativo.
