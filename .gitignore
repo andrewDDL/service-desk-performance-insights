@@ -1,0 +1,9 @@
+/data/
+*.xlsx
+*.pbix
+.env
+__pycache__/
+.venv/
+venv/
+env/
+ENV/
