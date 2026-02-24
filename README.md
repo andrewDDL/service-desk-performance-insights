@@ -1,89 +1,106 @@
 ﻿# Service Desk Performance Insights
 
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](#)
-[![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](#)
-[![Power_BI](https://img.shields.io/badge/Power_BI-F2C811?style=for-the-badge&logo=powerbi&logoColor=black)](#)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?style=for-the-badge&logo=postgresql&logoColor=white)](#)
+[![Python](https://img.shields.io/badge/Python-Data%20Pipeline-3776AB?style=for-the-badge&logo=python&logoColor=white)](#)
+[![Power BI](https://img.shields.io/badge/Power%20BI-Dashboard-F2C811?style=for-the-badge&logo=powerbi&logoColor=000000)](#)
+[![Excel](https://img.shields.io/badge/Excel-Ops%20Pack-217346?style=for-the-badge&logo=microsoftexcel&logoColor=white)](#)
+[![Docker](https://img.shields.io/badge/Docker-Local%20DW-2496ED?style=for-the-badge&logo=docker&logoColor=white)](#)
 
-## Overview | Visão Geral
+## Visão Executiva (O Problema de Negócio)
+Este projeto é um laboratório completo de ITSM/ITIL que simula uma operação de Service Desk de ponta a ponta, incluindo níveis de atendimento L1, L2 e L3.
 
-### English
-This project is an end-to-end data engineering and analytics portfolio designed to simulate a realistic IT Service Management (ITSM) operation. It translates raw technical support events into actionable business metrics.
+A proposta é transformar dados operacionais em inteligência gerencial para responder perguntas estratégicas de TI:
+- Qual é a eficiência real da operação (Gross MTTR vs Net MTTR)?
+- Qual é a taxa de conformidade de SLA por categoria, grupo e prioridade?
+- Quanto do backlog está realmente ativo e onde está concentrado?
 
-The goal is to demonstrate practical competency in **ITIL/ITSM processes**, **dimensional data modeling (Star Schema)**, and **business intelligence**. By generating a realistic dataset of 5,000+ support tickets and processing them through a complete data pipeline, this project answers critical operational questions:
-* What is the true operational efficiency (**Net MTTR**) when isolating user wait times?
-* What is the actual SLA compliance rate across different priorities and categories?
-* How effectively is the Level 1 team resolving issues at first contact (**FCR Proxy**)?
+O ambiente simula 12 meses de operação com mais de 4.300 tickets, cobrindo ciclo de vida completo, reaberturas, pausas em Pending, escalonamentos e violação de SLA em faixa realista.
 
-### Português (Brasil)
-Este projeto é um portfólio end-to-end de engenharia e análise de dados, desenvolvido para simular uma operação realista de IT Service Management (ITSM). Ele transforma eventos brutos de suporte técnico em métricas de negócio acionáveis.
+## Arquitetura de Dados
+Pipeline ponta a ponta:
 
-O objetivo é demonstrar competência prática em **processos ITIL/ITSM**, **modelagem dimensional de dados (Star Schema)** e **business intelligence**. Ao gerar um dataset realista com mais de 5.000 tickets de suporte e processá-lo por um pipeline completo de dados, este projeto responde a perguntas operacionais críticas:
-* Qual é a eficiência operacional real (**Net MTTR**) ao isolar tempos de espera do usuário?
-* Qual é a taxa real de conformidade com SLA entre diferentes prioridades e categorias?
-* Quão efetivamente o time de Nível 1 resolve incidentes no primeiro contato (**FCR Proxy**)?
+`Docker (PostgreSQL)` -> `Python (Faker + Pandas)` -> `Banco Relacional` -> `Views SQL de Transformação` -> `Excel (Ops Pack) / Power BI (Dashboard Executivo)`
 
-## Architecture & Methodology | Arquitetura e Metodologia
+Camadas principais:
+- **Infraestrutura local:** PostgreSQL 15 via Docker Compose.
+- **Geração de dados sintéticos:** Scripts Python com modelagem orientada a eventos.
+- **Modelo analítico:** Star Schema (`fact_ticket`, `fact_ticket_event`, dimensões de data, categoria, grupo, SLA e localização).
+- **Transformação analítica:** Views SQL para SLA Compliance, FCR/Escalonamento e Net MTTR.
+- **Consumo BI:** extrações CSV para Power BI e pacote tático operacional em Excel.
 
-### English
-The core differentiator of this project is the use of the **Event Sourcing** paradigm for data generation and modeling.
+## O Diferencial Técnico (Event Sourcing)
+O diferencial deste projeto está na engenharia dos dados: os tickets não são registros estáticos.
 
-Instead of merely generating a flat table of tickets, the Python pipeline acts as a state machine:
-1. **`fact_ticket_event`**: Generates the exact chronological history of status transitions (e.g., *New -> In Progress -> Pending -> In Progress -> Resolved*).
-2. **`fact_ticket`**: This final table is strictly derived from the event history.
+Foi construída uma **Máquina de Estados (Event Sourcing)** em Python para simular a vida do chamado, evento por evento:
 
-This approach mirrors enterprise systems like ServiceNow or Jira and mathematically guarantees the integrity of complex KPIs, such as pausing the SLA clock while a ticket is awaiting user input.
+`New -> In Progress -> Pending -> In Progress -> Resolved -> Closed`
 
-### Português (Brasil)
-O principal diferencial deste projeto é o uso do paradigma de **Event Sourcing** para geração e modelagem de dados.
+Com isso, a modelagem permite:
+- Calcular indicadores de forma confiável a partir do histórico transacional.
+- Medir **Net MTTR** com precisão, descontando o tempo em `Pending`.
+- Simular reabertura de chamados sem quebrar a linha do tempo.
+- Controlar a distribuição de violações de SLA em patamar realista (aprox. 10%).
 
-Em vez de gerar apenas uma tabela plana de tickets, o pipeline em Python funciona como uma máquina de estados:
-1. **`fact_ticket_event`**: Gera o histórico cronológico exato das transições de status (ex.: *New -> In Progress -> Pending -> In Progress -> Resolved*).
-2. **`fact_ticket`**: Esta tabela final é derivada estritamente do histórico de eventos.
+Essa abordagem aproxima o laboratório de cenários reais de plataformas como ServiceNow/Jira, onde KPIs dependem de sequência de eventos e não apenas do status final.
 
-Essa abordagem espelha sistemas corporativos como ServiceNow ou Jira e garante matematicamente a integridade de KPIs complexos, como pausar o relógio de SLA enquanto um ticket aguarda retorno do usuário.
+## Galeria de Dashboards (Imagens)
+### Capa do Dashboard
+![Capa](assets/capa_bi.png)
 
-## Tech Stack | Stack Tecnológica
-* **Data Generation & Pipeline / Geração de Dados e Pipeline:** Python (Pandas, Faker)
-* **Storage & Data Warehouse / Armazenamento e Data Warehouse:** PostgreSQL (containerizado via Docker)
-* **Transformations & KPIs / Transformações e KPIs:** SQL (CTEs, Window Functions, Aggregations)
-* **Visualization / Visualização:** Power BI (dashboards executivos e operacionais)
-* **Tactical Operations / Operação Tática:** Excel (Ops Pack para acompanhamento diário)
+### Visão Executiva (Power BI)
+![Visão Executiva 1](assets/visao_executiva_1_bi.png)
+![Visão Executiva 2](assets/visao_executiva_2_bi.png)
 
-## Repository Structure | Estrutura do Repositório
-* `/case_study/`: Business-focused documentation detailing the problem, approach, and executive findings. / Documentação orientada ao negócio com problema, abordagem e achados executivos.
-* `/docs/`: Technical documentation including Data Dictionary, Architecture, and the ITIL v4 Study Laboratory artifacts (`service_catalog.md`, `incident_workflow.md`, `sla_policy.md`, `data_quality.md`) to connect data engineering with service governance documentation. / Documentação técnica, incluindo Data Dictionary, Arquitetura e os artefatos do Laboratório de Estudos ITIL v4 (`service_catalog.md`, `incident_workflow.md`, `sla_policy.md`, `data_quality.md`) para conectar engenharia de dados com documentação de governança de serviços.
-* `/pipelines/`: Python scripts for generating the synthetic state-machine dataset and loading it into Postgres. / Scripts Python para gerar o dataset sintético baseado em máquina de estados e carregar no Postgres.
-* `/sql/`: DDL schemas, data marts, and KPI queries. / Schemas DDL, data marts e consultas de KPI.
-* `/powerbi/`: The final interactive dashboard file. / Arquivo final do dashboard interativo.
+### Visão Operacional (Power BI)
+![Visão Operacional 1](assets/visao_operacional_1_bi.png)
+![Visão Operacional 2](assets/visao_operacional_2_bi.png)
+![Visão Operacional 3](assets/visao_operacional_3_bi.png)
 
-## How to Run (Local Environment) | Como Executar (Ambiente Local)
+### Visão Tática (Excel Ops Pack - Aging Backlog)
+![Aging Backlog 1](assets/aging_backlog_excel.png)
+![Aging Backlog 2](assets/aging_backlog_excel_2.png)
 
-### English
-This project is designed to be 100% reproducible locally using Docker and Make.
+### Visão Tática (Excel Ops Pack - SLA por Grupo)
+![SLA por Grupo 1](assets/sla_por_grupo_excel.png)
+![SLA por Grupo 2](assets/sla_por_grupo_excel_2.png)
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/andrewDDL/service-desk-performance-insights.git
-   cd service-desk-performance-insights
-   ```
-2. **Prepare environment variables:**
-   ```bash
-   cp .env.example .env
-   ```
-3. **Run pipeline and analytics steps:**
-   *Detailed execution commands will be documented as pipeline scripts and SQL modules are added.*
+## Como Reproduzir
+Pré-requisitos:
+- Docker Desktop ativo
+- Python 3.10+ instalado
 
-### Português (Brasil)
-Este projeto foi desenhado para ser 100% reproduzível localmente usando Docker e Make.
+Passo a passo:
+1. Clone o repositório.
+```bash
+git clone https://github.com/andrewDDL/service-desk-performance-insights.git
+cd service-desk-performance-insights
+```
+2. Instale dependências Python.
+```bash
+python -m pip install -r requirements.txt
+```
+3. Suba o PostgreSQL local.
+```bash
+docker-compose --project-directory . -f db/docker-compose.yml up -d
+```
+4. Gere os dados sintéticos.
+```bash
+python pipelines/generate_tickets.py
+```
+5. Carregue os dados no PostgreSQL.
+```bash
+python pipelines/load_postgres.py
+```
+6. Materialize as views analíticas.
+```bash
+python scripts/run_sql_views.py
+```
+7. Exporte dados para consumo no BI.
+```bash
+python pipelines/export_for_powerbi.py
+```
 
-1. **Clone o repositório:**
-   ```bash
-   git clone https://github.com/andrewDDL/service-desk-performance-insights.git
-   cd service-desk-performance-insights
-   ```
-2. **Prepare as variáveis de ambiente:**
-   ```bash
-   cp .env.example .env
-   ```
-3. **Execute as etapas de pipeline e análise:**
-   *Os comandos detalhados serão documentados conforme os scripts de pipeline e módulos SQL forem adicionados.*
+## Próximos Passos / Melhorias Futuras
+1. Migrar o pipeline para orquestração com Apache Airflow (agendamento, observabilidade e retries).
+2. Adicionar testes automatizados de qualidade de dados (Great Expectations/pytest) com gatilhos de CI.
+3. Publicar o modelo em camadas Bronze/Silver/Gold e adicionar incremental load para simular operação diária.
