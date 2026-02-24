@@ -80,19 +80,37 @@ def add_event(events, ticket_id, event_time, from_status, to_status, actor_group
     )
 
 
+def build_final_status_targets(ticket_count):
+    counts = {
+        "Closed": int(ticket_count * 0.80),
+        "In Progress": int(ticket_count * 0.08),
+        "New": int(ticket_count * 0.06),
+        "Pending": int(ticket_count * 0.04),
+        "Resolved": int(ticket_count * 0.02),
+    }
+
+    # Ajusta arredondamento para fechar 100% dos tickets.
+    counts["Closed"] += ticket_count - sum(counts.values())
+
+    targets = []
+    for status, qty in counts.items():
+        targets.extend([status] * qty)
+    random.shuffle(targets)
+    return targets
+
+
 def choose_resolution_target_hours(sla_target_hours, should_breach, has_pending):
     if should_breach:
         return random.uniform(1.10 * sla_target_hours, 1.45 * sla_target_hours)
 
     lower_bound = 0.35 * sla_target_hours
     if has_pending:
-        # Pending tem pausa minima de 2h, entao precisa de duracao minima viavel.
+        # Pending exige no minimo 2h de pausa para manter comportamento realista.
         lower_bound = max(lower_bound, 2.5)
 
     upper_bound = 0.88 * sla_target_hours
     if lower_bound >= upper_bound:
         lower_bound = max(0.2, upper_bound - 0.1)
-
     return random.uniform(lower_bound, upper_bound)
 
 
@@ -104,13 +122,37 @@ def generate_fact_ticket_event(fake, dim_category, dim_group, dim_location, dim_
     sla_hours_map = dict(zip(dim_sla_policy["policy_id"], dim_sla_policy["sla_target_hours"]))
 
     ticket_numbers = list(range(1, ticket_count + 1))
-    breach_target_count = int(round(ticket_count * random.uniform(0.10, 0.15)))
-    pending_target_count = int(round(ticket_count * 0.20))
-    reopen_target_count = int(round(ticket_count * 0.10))
+    final_status_targets = build_final_status_targets(ticket_count)
+    ticket_final_status = {ticket_num: final_status_targets[ticket_num - 1] for ticket_num in ticket_numbers}
 
-    breach_ticket_numbers = set(random.sample(ticket_numbers, breach_target_count))
-    pending_ticket_numbers = set(random.sample(ticket_numbers, pending_target_count))
-    reopen_ticket_numbers = set(random.sample(ticket_numbers, reopen_target_count))
+    resolvable_tickets = [
+        ticket_num
+        for ticket_num in ticket_numbers
+        if ticket_final_status[ticket_num] in {"Resolved", "Closed"}
+    ]
+
+    breach_target_count = int(round(len(resolvable_tickets) * random.uniform(0.10, 0.15)))
+    breach_ticket_numbers = set(random.sample(resolvable_tickets, breach_target_count)) if resolvable_tickets else set()
+
+    pending_pause_tickets = [
+        ticket_num for ticket_num in resolvable_tickets if ticket_final_status[ticket_num] == "Closed"
+    ]
+    pending_pause_target_count = int(round(len(pending_pause_tickets) * 0.20))
+    pending_pause_numbers = (
+        set(random.sample(pending_pause_tickets, pending_pause_target_count))
+        if pending_pause_tickets
+        else set()
+    )
+
+    reopen_tickets = [
+        ticket_num for ticket_num in resolvable_tickets if ticket_final_status[ticket_num] == "Closed"
+    ]
+    reopen_target_count = int(round(len(reopen_tickets) * 0.10))
+    reopen_ticket_numbers = (
+        set(random.sample(reopen_tickets, reopen_target_count))
+        if reopen_tickets
+        else set()
+    )
 
     for i in ticket_numbers:
         ticket_id = f"TCK-{i:06d}"
@@ -121,6 +163,7 @@ def generate_fact_ticket_event(fake, dim_category, dim_group, dim_location, dim_
         location_id = random.choice(dim_location["location_id"].tolist())
         sla_policy_id = random.choices([1, 2, 3, 4], weights=[0.1, 0.25, 0.4, 0.25], k=1)[0]
         sla_target_hours = sla_hours_map[sla_policy_id]
+        final_target_status = ticket_final_status[i]
 
         ticket_attributes.append(
             {
@@ -134,33 +177,37 @@ def generate_fact_ticket_event(fake, dim_category, dim_group, dim_location, dim_
             }
         )
 
+        # Todo ticket inicia em New com actor_group_id do L1.
+        add_event(events, ticket_id, created_at, None, "New", 1)
+        if final_target_status == "New":
+            continue
+
+        # Todo ticket que avanca sai de New e entra em In Progress.
+        in_progress_time = created_at + timedelta(minutes=random.randint(5, 90))
+        add_event(events, ticket_id, in_progress_time, "New", "In Progress", group_id)
+        current_time = in_progress_time
+
+        if final_target_status == "In Progress":
+            continue
+
+        if final_target_status == "Pending":
+            pending_start = current_time + timedelta(minutes=random.randint(20, 240))
+            add_event(events, ticket_id, pending_start, "In Progress", "Pending", group_id)
+            continue
+
         should_breach = i in breach_ticket_numbers
-        has_pending = i in pending_ticket_numbers
+        has_pending_pause = i in pending_pause_numbers
         has_reopen = i in reopen_ticket_numbers
 
         target_resolution_hours = choose_resolution_target_hours(
             sla_target_hours=sla_target_hours,
             should_breach=should_breach,
-            has_pending=has_pending,
+            has_pending=has_pending_pause,
         )
         final_resolve_time = created_at + timedelta(hours=target_resolution_hours)
 
-        # Event sourcing: estado final e sempre derivado do fluxo de eventos.
-        add_event(events, ticket_id, created_at, None, "New", 1)
-
-        new_to_in_progress_hours = min(
-            random.uniform(0.05, 0.25),
-            max(0.02, target_resolution_hours * 0.20),
-        )
-        in_progress_time = created_at + timedelta(hours=new_to_in_progress_hours)
-        if in_progress_time >= final_resolve_time:
-            in_progress_time = created_at + timedelta(hours=max(0.01, target_resolution_hours * 0.1))
-
-        add_event(events, ticket_id, in_progress_time, "New", "In Progress", group_id)
-        current_time = in_progress_time
-
-        # Regra atomica do Pending: entrada e saida imediata como dois eventos consecutivos.
-        if has_pending:
+        # Pending intermediario: sempre pareado por retorno imediato a In Progress.
+        if has_pending_pause:
             remaining_hours = (final_resolve_time - current_time).total_seconds() / 3600.0
             min_after_pending_hours = 0.25 if has_reopen else 0.10
             pre_pending_min = 0.05
@@ -174,7 +221,6 @@ def generate_fact_ticket_event(fake, dim_category, dim_group, dim_location, dim_
                     pending_hours = random.uniform(2.0, pending_max)
                     pending_start = current_time + timedelta(hours=pre_pending_hours)
                     pending_end = pending_start + timedelta(hours=pending_hours)
-
                     add_event(events, ticket_id, pending_start, "In Progress", "Pending", group_id)
                     add_event(events, ticket_id, pending_end, "Pending", "In Progress", group_id)
                     current_time = pending_end
@@ -189,7 +235,6 @@ def generate_fact_ticket_event(fake, dim_category, dim_group, dim_location, dim_
             if reopen_gap_max >= 0.05:
                 reopen_gap_hours = random.uniform(0.05, reopen_gap_max)
                 reopen_time = first_resolved_time + timedelta(hours=reopen_gap_hours)
-
                 add_event(events, ticket_id, first_resolved_time, "In Progress", "Resolved", group_id)
                 add_event(events, ticket_id, reopen_time, "Resolved", "In Progress", group_id)
                 add_event(events, ticket_id, final_resolve_time, "In Progress", "Resolved", group_id)
@@ -197,6 +242,9 @@ def generate_fact_ticket_event(fake, dim_category, dim_group, dim_location, dim_
                 add_event(events, ticket_id, final_resolve_time, "In Progress", "Resolved", group_id)
         else:
             add_event(events, ticket_id, final_resolve_time, "In Progress", "Resolved", group_id)
+
+        if final_target_status == "Resolved":
+            continue
 
         close_time = final_resolve_time + timedelta(hours=random.uniform(0.25, 24))
         add_event(events, ticket_id, close_time, "Resolved", "Closed", group_id)
@@ -217,7 +265,7 @@ def calculate_csat_score(reopens_count, breached_sla):
 
 
 def build_fact_ticket(events_df, ticket_attributes_df, dim_sla_policy):
-    # Projecao materializada: consolida o snapshot final a partir dos eventos.
+    # Projecao materializada: snapshot final calculado a partir dos eventos.
     ticket_rows = []
     sla_hours_map = dict(zip(dim_sla_policy["policy_id"], dim_sla_policy["sla_target_hours"]))
 
@@ -226,9 +274,13 @@ def build_fact_ticket(events_df, ticket_attributes_df, dim_sla_policy):
         attributes = ticket_attributes_df.loc[ticket_attributes_df["ticket_id"] == ticket_id].iloc[0]
 
         created_at = ordered.loc[ordered["to_status"] == "New", "event_time"].min()
-        resolved_at = ordered.loc[ordered["to_status"] == "Resolved", "event_time"].max()
         final_status = ordered["to_status"].iloc[-1]
         reopens_count = ((ordered["from_status"] == "Resolved") & (ordered["to_status"] == "In Progress")).sum()
+
+        if final_status in {"New", "In Progress", "Pending"}:
+            resolved_at = pd.NaT
+        else:
+            resolved_at = ordered.loc[ordered["to_status"] == "Resolved", "event_time"].max()
 
         sla_hours = sla_hours_map[int(attributes["sla_policy_id"])]
         due_at = created_at + timedelta(hours=sla_hours)
